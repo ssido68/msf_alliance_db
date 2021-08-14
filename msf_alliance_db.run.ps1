@@ -12,6 +12,9 @@ Global:log -text "loaded utility file" -Hierarchy "INIT"
 . "$PSScriptRoot\msf_alliance_db.sqllite.ps1"
 Global:log -text "loaded sqllite file" -Hierarchy "INIT"
 
+. "$PSScriptRoot\msf_alliance.definitions.ps1"
+Global:log -text "loaded definitions file" -Hierarchy "INIT"
+
 
 
 #region # Database init
@@ -29,12 +32,57 @@ IF ( !(Test-Path -Path $Database) ) {
 
 $Connection = New-SQLiteConnection -DataSource $Database
 $query = "SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';"
-$data = Invoke-SqliteQuery -SQLiteConnection $Connection -Query $query
-$data 
+$Tables = Invoke-SqliteQuery -SQLiteConnection $Connection -Query $query
 
 
+$sqliteTables = $msf_alliance_app_definitions.sqllite.tables.GetEnumerator()
+if ( ($msf_alliance_app_definitions.sqllite.tables.GetEnumerator() | Measure-Object).count -ne $Tables ) {
+    Global:log -text ( "Table amount incorrect"-F $Database ) -Hierarchy "DATABASE" -type warning
+    $sqliteTables | % {
+        $thisTableName = $_.name
+        $thisTableFields =$msf_alliance_app_definitions.sqllite.tables.$thisTableName.fields.GetEnumerator() 
 
-$a
+        $fieldNameArray = @()
+        $thisTableFields | % {
+            $fieldNameArray +=  $_.name
+        }
+
+        
+        Global:log -text ( "Checking {0} table"-F $thisTableName ) -Hierarchy "DATABASE"
+        $query = "pragma table_info({0});" -F $thisTableName
+        Invoke-SqliteQuery -SQLiteConnection $Connection -Query $query | % {
+            if ( $fieldNameArray  -contains $_.name ) {
+                write-host ( "{1} contains {0}" -f $_.name, ( $fieldNameArray | ConvertTo-Json ) )
+            }
+
+        }
+        
+        
+    }
+    exit
+    "pragma table_info(people);"
+
+}
+
+exit
+
+
+IF ( ($Tables | Measure-Object).count -ne 5 ) {
+    $Tables | ? {$_.name -eq "members" } | % { Global:log -text ( "Table"-F $Database ) -Hierarchy "DATABASE" -type warning }
+}
+
+exit
+
+ $query = "CREATE TABLE [members] (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name CHAR(50),
+    role CHAR(50),
+    join_date dt,
+    quit_date dt,
+    status CHAR(50));"    
+
+ Invoke-SqliteQuery -SQLiteConnection $Connection -Query $query 
+
 
 exit
 "CREATE TABLE [dbo].[members] (
