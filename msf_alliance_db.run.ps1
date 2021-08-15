@@ -36,7 +36,7 @@ $Tables = Invoke-SqliteQuery -SQLiteConnection $Connection -Query $query
 
 
 $sqliteTables = $msf_alliance_app_definitions.sqllite.tables.GetEnumerator()
-if ( ($msf_alliance_app_definitions.sqllite.tables.GetEnumerator() | Measure-Object).count -ne $Tables ) {
+if ( ($msf_alliance_app_definitions.sqllite.tables.GetEnumerator() | Measure-Object).count -ne $Tables.count ) {
     Global:log -text ( "Table amount incorrect"-F $Database ) -Hierarchy "DATABASE" -type warning
     $sqliteTables | % {
         $thisTableName = $_.name
@@ -47,21 +47,43 @@ if ( ($msf_alliance_app_definitions.sqllite.tables.GetEnumerator() | Measure-Obj
             $fieldNameArray +=  $_.name
         }
 
-        
         Global:log -text ( "Checking {0} table"-F $thisTableName ) -Hierarchy "DATABASE"
         $query = "pragma table_info({0});" -F $thisTableName
-        Invoke-SqliteQuery -SQLiteConnection $Connection -Query $query | % {
-            if ( $fieldNameArray  -contains $_.name ) {
-                write-host ( "{1} contains {0}" -f $_.name, ( $fieldNameArray | ConvertTo-Json ) )
-            }
+        $TableFieldMissmatch = 0
+        
+        $ThisTableQueryResult = Invoke-SqliteQuery -SQLiteConnection $Connection -Query $query
+        #write-host ("ThisTableQueryResult:'{0}'" -F ($ThisTableQueryResult |ConvertTo-Json -Compress))
+        if ( ($ThisTableQueryResult |Measure-Object).count -eq 0 ) {
+            Global:log -text ( "Missing  {0} table"-F $thisTableName ) -Hierarchy "DATABASE" -type warning
 
+            $SQL_CreateTable_Statement = "CREATE TABLE {0} ( {1} );" -F $thisTableName,"{0}"
+            $SQL_CreateTable_Fields = ""
+            
+
+            $msf_alliance_app_definitions.sqllite.tables.$thisTableName.fields.GetEnumerator() | % {
+                $SQL_CreateTable_Fields = "{0}{1} {2}," -F $SQL_CreateTable_Fields,$_.Name, $_.Value
+            } 
+            $SQL_CreateTable_Statement = $SQL_CreateTable_Statement -F ($SQL_CreateTable_Fields -replace ".$" )# removes last character from string
+            Global:log -text ( "Creating with sql statement '{0}'"-F $SQL_CreateTable_Statement ) -Hierarchy "DATABASE" 
+            $ThisTableQueryResult = Invoke-SqliteQuery -SQLiteConnection $Connection -Query $SQL_CreateTable_Statement
+        
+
+
+        } else {
+            $ThisTableQueryResult | % {
+                if ( $fieldNameArray  -notcontains $_.name ) {
+                    Global:log -text ( "field {0} is missing  from table!" -f $_.name ) -Hierarchy "DATABASE" -type error
+                    $TableFieldMissmatch = 1
+                }
+            }
+            if ( $TableFieldMissmatch -eq 1) { exit } else { Global:log -text ( "Table {0} matches definition"-F $thisTableName ) -Hierarchy "DATABASE" }
+    
         }
         
-        
     }
-    exit
-    "pragma table_info(people);"
 
+} else {
+    Global:log -text ( "Table amount match definition"-F $Database ) -Hierarchy "DATABASE"
 }
 
 exit
